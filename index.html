@@ -344,7 +344,7 @@
 const VK = 'finanz-vault-v1', BK = 'finanz-bio-v1', FK = 'finanz-fail-v1';
 const ITER = 210000;
 const DEMO = false; // true en la versión de demostración
-const CATS_ING = ['Inscripciones','Garantías','Entradas (boletería)','Carnets','Patrocinios','Otros ingresos'];
+const CATS_ING = ['Inscripciones','Garantías','Entradas (boletería)','Sponsors','Premios o sorteos','Carnets','Otros ingresos'];
 const CATS_GAS = ['Alquiler del complejo','Cobradores de entrada','Arbitraje','Gastos de caja','Premios','Devolución de garantías','Carnets / impresión','Publicidad','Otros gastos'];
 const EQUIPOS = ['Galacticos','Sub 21','Barcelona','Leipzig','Corintians','Leones','La banda','Legacy','Arapaima','Real Sevilla',
   'San Francisco','Juventus','Randagi','Vaster','Mandela','Alianza Jr.','Clowiss','San Andres','Libert','Cordovez','America',
@@ -803,6 +803,8 @@ function demoData(){
     d.equipos.push(e);
   });
   d.movs.push({id:'demo-m1',fecha:'2026-09-10',tipo:'gasto',cat:'Alquiler del complejo',detalle:'Anticipo del 50%',monto:1500});
+  d.movs.push({id:'demo-m5',fecha:'2026-09-12',tipo:'ingreso',cat:'Sponsors',detalle:'Auspicio de ejemplo',monto:300});
+  d.movs.push({id:'demo-m6',fecha:'2026-09-20',tipo:'ingreso',cat:'Premios o sorteos',detalle:'Venta de rifas (ejemplo)',monto:60});
   const cob = (a,b) => [{n:'Marco',m:a},{n:'Luis',m:b}];
   d.caja = [
     {fecha:'2026-09-18', desde:1001, hasta:1400, devueltos:112, efectivo:241, transf:47, cob:cob(15,15), arb:82, gastos:[{d:'Agua y hielo',m:6}], nota:'Primera fecha'},

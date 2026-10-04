@@ -346,10 +346,13 @@ const ITER = 210000;
 const DEMO = false; // true en la versión de demostración
 const CATS_ING = ['Inscripciones','Garantías','Entradas (boletería)','Carnets','Patrocinios','Otros ingresos'];
 const CATS_GAS = ['Alquiler del complejo','Cobradores de entrada','Arbitraje','Gastos de caja','Premios','Devolución de garantías','Carnets / impresión','Publicidad','Otros gastos'];
+const EQUIPOS = ['Galacticos','Sub 21','Barcelona','Leipzig','Corintians','Leones','La banda','Legacy','Arapaima','Real Sevilla',
+  'San Francisco','Juventus','Randagi','Vaster','Mandela','Alianza Jr.','Clowiss','San Andres','Libert','Cordovez','America',
+  'Cormoran','Templo Fit','Barrio Fino','Somec','Huracan','Pecezuelos','Universitarios','Real Potosi','Jolines','Gladiadores AZ','Xeneize'];
 const DEFAULT = () => ({
   cfg:{ inscRegular:125, inscCampeon:80, garantia:45, complejo:3000, cobradorSemana:45, semanas:13,
         ticketPrecio:1, premioOro:[700,350,200], premioPlata:[150,100,50], metaEquipos:32 },
-  equipos:[], movs:[], caja:[]
+  equipos: EQUIPOS.map((n,i) => ({id:'t'+(i+1), nombre:n, tipo:'regular', pagos:[]})), movs:[], caja:[]
 });
 const LOGO = `<svg viewBox="0 0 48 48" width="100%" height="100%" role="img" aria-label="FINANZ">
   <rect width="48" height="48" rx="12" fill="#0c1a2b"/>
@@ -721,7 +724,8 @@ function renderEquipos(){
   if(!S.equipos.length) h += '<tr><td colspan="7" class="muted">Agrega tus equipos arriba.</td></tr>';
   S.equipos.forEach(e => {
     const di = costoInsc(e), pi = pagado(e,'insc'), pg = pagado(e,'gar');
-    h += `<tr><td><b>${esc(e.nombre)}</b></td><td>${e.tipo==='campeon'?'Campeón':'Regular'}</td>
+    h += `<tr><td><b>${esc(e.nombre)}</b></td>
+      <td><select style="width:auto" aria-label="Tipo de inscripción" onchange="setTipo('${e.id}',this.value)"><option value="regular" ${e.tipo==='regular'?'selected':''}>Regular</option><option value="campeon" ${e.tipo==='campeon'?'selected':''}>Campeón</option></select></td>
       <td class="num">${money(pi)} / ${money(di)}</td><td>${estado(di,pi)}</td>
       <td class="num">${money(pg)} / ${money(S.cfg.garantia)} ${pg>=S.cfg.garantia?'✓':''}</td>
       <td><div class="pay"><input type="number" inputmode="decimal" step="0.01" min="0" placeholder="USD" id="p-${e.id}" aria-label="Monto del pago">
@@ -731,6 +735,7 @@ function renderEquipos(){
   });
   $('tEq').innerHTML = h;
 }
+function setTipo(id, tipo){ const e = S.equipos.find(x=>x.id===id); if(e){ e.tipo = tipo; save(); } }
 function pagar(id){
   const e = S.equipos.find(x=>x.id===id), monto = parseFloat($('p-'+id).value), k = $('k-'+id).value;
   if(!(monto > 0)) return;
@@ -784,7 +789,7 @@ function renderCfg(){
 
 /* ============ Datos de ejemplo ============ */
 function demoData(){
-  const d = DEFAULT(), c = d.cfg;
+  const d = DEFAULT(), c = d.cfg; d.equipos = [];
   const lista = [['Deportivo Norte','campeon',1],['Atlético Sur','campeon',1],['Unidos del Valle','regular',1],['Juventud Obrera','regular',1],
     ['Real San Miguel','regular',1],['Barrio Alto','regular',2],['Los Sauces FC','regular',2],['Cantera 2000','regular',0],
     ['Estrella Roja','regular',0],['Tigres del Centro','regular',2],['Halcones','regular',1],['Veteranos Unidos','regular',0]];
@@ -876,7 +881,7 @@ $('bkCopy').onclick = () => { const t = JSON.stringify(S);
 $('bkPaste').onclick = () => $('pasteBox').classList.toggle('hidden');
 $('pasteNo').onclick = () => $('pasteBox').classList.add('hidden');
 $('pasteOk').onclick = () => cargarRespaldo($('pasteTxt').value);
-$('reset').onclick = () => ask('¿Borrar TODOS los datos? Tu clave se mantiene. Descarga o copia un respaldo antes si lo necesitas.', () => { S = DEFAULT(); $('cfgForm').dataset.ok=''; save(); loadDay(today()); toast('Datos borrados'); });
+$('reset').onclick = () => ask('¿Borrar los pagos, cierres de caja y movimientos? Tu clave y la lista de 32 equipos se mantienen. Descarga o copia un respaldo antes si lo necesitas.', () => { S = DEFAULT(); $('cfgForm').dataset.ok=''; save(); loadDay(today()); toast('Datos borrados'); });
 $('demoBtn').onclick = () => ask('Esto reemplaza los datos actuales por datos de ejemplo. ¿Continuar?', () => { S = demoData(); $('cfgForm').dataset.ok=''; save(); loadDay(today()); toast('Datos de ejemplo cargados'); });
 
 /* ============ Arranque ============ */

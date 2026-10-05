@@ -89,6 +89,7 @@
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
   .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end}
   button.act{cursor:pointer;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:8px;padding:9px 14px;font-weight:600}
+  a.act{display:inline-block;text-decoration:none;cursor:pointer;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:8px;padding:9px 14px;font-weight:600}
   button.ghost{background:var(--card);color:var(--ink);border-color:var(--line);font-weight:500}
   button.del{border:0;background:none;color:var(--neg);cursor:pointer;font-size:16px;padding:2px 6px}
   .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
@@ -318,21 +319,15 @@
         <h2 style="margin-top:0">Nube (mismos datos en todos tus dispositivos)</h2>
         <p class="muted" id="cloudTxt" style="margin-top:0"></p>
         <div id="cloudOff">
-          <div class="row"><button class="act" id="clPrep">1. Preparar el script de Google</button></div>
-          <div id="clSteps" class="hidden">
-            <ol class="muted" style="padding-left:20px;margin:0 0 10px">
-              <li>Entra a script.google.com con tu cuenta de Google y crea un «Proyecto nuevo».</li>
-              <li>Borra lo que trae, pega el código de abajo y guarda.</li>
-              <li>Pulsa «Implementar», «Nueva implementación», tipo «Aplicación web». Ejecutar como: Yo. Quién tiene acceso: Cualquier persona. Autoriza los permisos de Drive (si Google avisa que la app no está verificada, entra en «Avanzado»).</li>
-              <li>Copia la dirección de la «Aplicación web» y pégala abajo.</li>
-            </ol>
-            <label for="clScript">Código del script (ya trae tu clave secreta)</label>
-            <textarea id="clScript" rows="7" readonly style="width:100%;font-family:monospace;font-size:12px"></textarea>
-            <div class="row"><button class="act ghost" id="clCopyScript">Copiar código del script</button></div>
-            <label for="clUrl">Dirección de la aplicación web (termina en /exec)</label>
-            <input id="clUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
-            <div class="row"><button class="act" id="clConnect">2. Conectar</button></div>
-          </div>
+          <ol class="muted" style="padding-left:20px;margin:0 0 10px">
+            <li>Pulsa «Crear token en GitHub». Se abre una página con el permiso «gist» ya marcado. Baja y pulsa «Generate token» (en «Expiration» puedes elegir «No expiration»).</li>
+            <li>Copia el token que empieza con <b>ghp_</b>, vuelve aquí, pégalo y pulsa «Conectar».</li>
+          </ol>
+          <div class="row"><a class="act" href="https://github.com/settings/tokens/new?scopes=gist&amp;description=FINANZ" target="_blank" rel="noopener">Crear token en GitHub</a></div>
+          <label for="clToken">Token de GitHub</label>
+          <input type="password" id="clToken" placeholder="ghp_…" autocomplete="off">
+          <div class="row"><button class="act" id="clConnect">Conectar</button></div>
+          <p class="muted" style="margin:0">El token solo da acceso a tus «gists», no a tus repositorios. Tus datos se guardan cifrados en un gist secreto, y la llave de cifrado nunca sale de tus dispositivos.</p>
         </div>
         <div id="cloudOn" class="hidden">
           <div class="row">
@@ -485,57 +480,49 @@ function persist(){
 }
 function save(){ localVer++; if(CLOUD) CLOUD.pending = true; render(); persist(); schedulePush(); }
 
-/* ============ Nube (Google Drive vía Apps Script) ============ */
-const CLT = 'finanz-cltok-v1';
-const SCRIPT_TPL = [
-"const TOKEN = '__TOKEN__';",
-"const ARCHIVO = 'finanz-datos.json';",
-"function archivo_() {",
-"  const it = DriveApp.getFilesByName(ARCHIVO);",
-"  return it.hasNext() ? it.next() : DriveApp.createFile(ARCHIVO, '', MimeType.PLAIN_TEXT);",
-"}",
-"function salida_(o) {",
-"  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);",
-"}",
-"function doPost(e) {",
-"  let b;",
-"  try { b = JSON.parse(e.postData.contents); } catch (x) { return salida_({ok:false, error:'formato'}); }",
-"  if (b.t !== TOKEN) return salida_({ok:false, error:'token'});",
-"  const lock = LockService.getScriptLock();",
-"  lock.waitLock(20000);",
-"  try {",
-"    const f = archivo_();",
-"    const txt = f.getBlob().getDataAsString();",
-"    const actual = txt ? JSON.parse(txt) : null;",
-"    if (b.op === 'get') return salida_({ok:true, data:actual});",
-"    if (b.op === 'put') {",
-"      const rev = actual ? actual.rev : 0;",
-"      if (b.baseRev !== rev) return salida_({ok:false, error:'conflict', data:actual});",
-"      f.setContent(JSON.stringify(b.data));",
-"      return salida_({ok:true, rev:b.data.rev});",
-"    }",
-"    return salida_({ok:false, error:'op'});",
-"  } finally {",
-"    lock.releaseLock();",
-"  }",
-"}",
-"function doGet() { return salida_({ok:true, mensaje:'FINANZ activo'}); }"
-].join('\n');
-const URL_OK = u => /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(u) || /^http:\/\/(localhost|127\.0\.0\.1):\d+\//.test(u);
+/* ============ Nube (gist secreto de GitHub, siempre cifrado) ============ */
+const GH = window.__GH || 'https://api.github.com';
+const GFILE = 'finanz-datos.json', GDESC = 'FINANZ datos cifrados';
 let syncT = null, syncBusy = false, conflictOpen = false;
 const hora = () => new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit',hour12:false});
 function setBadge(kind, txt){
   const b = $('syncBadge');
   if(!CLOUD){ b.hidden = true; return; }
+  if(txt === undefined) return;
   b.hidden = false; b.className = 'pill ' + ({ok:'ok', busy:'warn', err:'bad'}[kind] || 'warn'); b.textContent = txt;
 }
-async function cloudCall(c, body){
+async function gh(c, path, opts = {}){
   const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 25000);
   try{
-    const r = await fetch(c.u, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({...body, t:c.t}), signal:ctl.signal});
-    if(!r.ok) throw new Error('http '+r.status);
-    return await r.json();
+    return await fetch(GH + path, {
+      method: opts.method || 'GET',
+      headers: {'Authorization':'Bearer '+c.t, 'Accept':'application/vnd.github+json', ...(opts.body ? {'Content-Type':'application/json'} : {})},
+      body: opts.body ? JSON.stringify(opts.body) : undefined, signal: ctl.signal });
   } finally { clearTimeout(to); }
+}
+async function gistRead(c){
+  const r = await gh(c, '/gists/' + c.g);
+  if(r.status === 401) throw new Error('token');
+  if(r.status === 404) throw new Error('nogist');
+  if(!r.ok) throw new Error('http ' + r.status);
+  const j = await r.json(), f = j.files && j.files[GFILE];
+  if(!f) return null;
+  let txt = f.content;
+  if(f.truncated || txt == null){ txt = await (await fetch(f.raw_url)).text(); }
+  return txt ? JSON.parse(txt) : null;
+}
+async function cloudGet(c){ return {ok:true, data: await gistRead(c)}; }
+async function cloudPut(c, baseRev, blob){
+  const cur = await gistRead(c);
+  if((cur ? cur.rev : 0) !== baseRev) return {ok:false, error:'conflict', data:cur};
+  const r = await gh(c, '/gists/' + c.g, {method:'PATCH', body:{files:{[GFILE]:{content:JSON.stringify(blob)}}}});
+  if(r.status === 401) throw new Error('token');
+  if(!r.ok) throw new Error('http ' + r.status);
+  return {ok:true, rev:blob.rev};
+}
+function cloudErr(e){
+  const m = e && e.message;
+  return m === 'token' ? 'Nube ✗ token vencido' : m === 'nogist' ? 'Nube ✗ archivo no encontrado' : 'Nube ✗ sin conexión';
 }
 function schedulePush(){ if(!CLOUD) return; clearTimeout(syncT); setBadge('busy','Nube … pendiente'); syncT = setTimeout(syncPush, 1200); }
 async function syncPush(){
@@ -545,12 +532,10 @@ async function syncPush(){
   const c = CLOUD, key = KEY, s = S, ver = localVer; let again = false;
   try{
     const blob = await sealCloud(c.rev + 1, key, s);
-    const r = await cloudCall(c, {op:'put', baseRev:c.rev, data:blob});
+    const r = await cloudPut(c, c.rev, blob);
     if(r.ok){ c.rev = blob.rev; c.pending = (localVer !== ver); again = c.pending; await persistNow(key, s, c); setBadge('ok','Nube ✓ '+hora()); }
     else if(r.error === 'conflict'){ if(CLOUD === c) onConflict(r.data); }
-    else if(r.error === 'token'){ setBadge('err','Nube ✗ clave inválida'); }
-    else setBadge('err','Nube ✗ error');
-  }catch(e){ setBadge('err','Nube ✗ sin conexión'); }
+  }catch(e){ setBadge('err', cloudErr(e)); }
   finally{ syncBusy = false; }
   if(again) schedulePush();
 }
@@ -559,15 +544,13 @@ async function syncPull(manual){
   syncBusy = true; setBadge('busy','Nube …');
   let push = false;
   try{
-    const r = await cloudCall(CLOUD, {op:'get'});
-    if(!r.ok) throw new Error(r.error || 'nube');
-    const blob = r.data;
+    const r = await cloudGet(CLOUD), blob = r.data;
     if(blob && blob.rev > CLOUD.rev){
       if(CLOUD.pending) onConflict(blob);
       else { await adoptCloud(blob, 'Datos actualizados desde la nube'); setBadge('ok','Nube ✓ '+hora()); }
     } else { setBadge('ok','Nube ✓ '+hora()); push = CLOUD.pending; }
     if(manual && !conflictOpen) toast('Todo sincronizado');
-  }catch(e){ setBadge('err', e.message === 'token' ? 'Nube ✗ clave inválida' : 'Nube ✗ sin conexión'); if(manual) toast('No se pudo conectar con la nube'); }
+  }catch(e){ setBadge('err', cloudErr(e)); if(manual) toast(e.message === 'token' ? 'El token de GitHub venció. Desconecta y vuelve a conectar.' : 'No se pudo conectar con la nube'); }
   finally{ syncBusy = false; }
   if(push) syncPush();
 }
@@ -588,11 +571,10 @@ function onConflict(blob){
     async () => { conflictOpen = false; if(!CLOUD) return; CLOUD.rev = blob.rev; CLOUD.pending = true; await persistNow(); syncPush(); },
     'Usar los de la nube', 'Mantener los de este dispositivo');
 }
-function newToken(){ return b64(crypto.getRandomValues(new Uint8Array(24))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
-async function makeLinkCode(){ const raw = await crypto.subtle.exportKey('raw', KEY); return 'FZ1.' + btoa(JSON.stringify({u:CLOUD.u, t:CLOUD.t, k:b64(raw)})); }
+async function makeLinkCode(){ const raw = await crypto.subtle.exportKey('raw', KEY); return 'FZ2.' + btoa(JSON.stringify({g:CLOUD.g, t:CLOUD.t, k:b64(raw)})); }
 function parseLink(txt){
-  try{ const s = String(txt).replace(/\s+/g,''); if(!s.startsWith('FZ1.')) return null;
-    const o = JSON.parse(atob(s.slice(4))); return (o.u && o.t && o.k && URL_OK(o.u)) ? o : null; }catch(e){ return null; }
+  try{ const s = String(txt).replace(/\s+/g,''); if(!s.startsWith('FZ2.')) return null;
+    const o = JSON.parse(atob(s.slice(4))); return (/^[0-9a-f]{20,40}$/.test(o.g||'') && o.t && o.k) ? o : null; }catch(e){ return null; }
 }
 function copyText(el){
   el.select();
@@ -603,7 +585,7 @@ function renderCloud(){
   const on = !!CLOUD;
   $('cloudOn').classList.toggle('hidden', !on); $('cloudOff').classList.toggle('hidden', on || DEMO);
   $('cloudTxt').textContent = DEMO ? 'La nube no funciona en esta demo. Úsala desde tu página publicada en GitHub.'
-    : on ? 'Conectada. Tus datos se guardan cifrados en tu Google Drive y se abren iguales en todos tus dispositivos.'
+    : on ? 'Conectada. Tus datos se guardan cifrados en un gist secreto de tu GitHub y se abren iguales en todos tus dispositivos.'
          : 'Sin conectar. Hoy cada dispositivo guarda sus propios datos.';
   setBadge();
 }
@@ -701,9 +683,8 @@ async function createVault(pin){
   if(pendingLink){
     try{
       drawLock('Descargando tus datos…');
-      dk = await importDK(unb64(pendingLink.k)); cloud = {u:pendingLink.u, t:pendingLink.t, rev:0, pending:false};
-      const r = await cloudCall(cloud, {op:'get'});
-      if(!r.ok) throw new Error(r.error || 'nube');
+      dk = await importDK(unb64(pendingLink.k)); cloud = {g:pendingLink.g, t:pendingLink.t, rev:0, pending:false};
+      const r = await cloudGet(cloud);
       if(r.data){ data = (await openCloud(dk, r.data)).S; cloud.rev = r.data.rev; }
     }catch(e){
       pendingLink = null; first = ''; setMode('create1'); shake();
@@ -726,7 +707,7 @@ function enterApp(){
 function lockApp(){
   S = null; KEY = null; CLOUD = null; draft = null; dirty = false; clearTimeout(idleT); clearTimeout(syncT); conflictOpen = false;
   document.querySelectorAll('#app input, #app textarea').forEach(el => { if(el.type!=='file') el.value=''; });
-  $('cfgForm').dataset.ok = ''; $('clCodeBox').classList.add('hidden'); $('clSteps').classList.add('hidden'); setBadge();
+  $('cfgForm').dataset.ok = ''; $('clCodeBox').classList.add('hidden'); setBadge();
   $('app').hidden = true; $('lock').hidden = false; $('modal').hidden = true;
   const v = ls.get(VK); VAULT = v ? JSON.parse(v) : null;
   setMode(VAULT ? 'unlock' : 'create1');
@@ -1122,29 +1103,38 @@ $('linkOk').onclick = () => {
   if(!o){ toast('Código no válido. Cópialo completo desde tu otro dispositivo.'); return; }
   pendingLink = o; $('linkTxt').value = ''; $('linkModal').hidden = true; setMode('create1');
 };
-$('clPrep').onclick = () => {
-  let t = ls.get(CLT); if(!t){ t = newToken(); ls.set(CLT, t); }
-  $('clScript').value = SCRIPT_TPL.replace('__TOKEN__', t); $('clSteps').classList.remove('hidden');
-};
-$('clCopyScript').onclick = () => copyText($('clScript'));
 $('clConnect').onclick = async () => {
-  const u = $('clUrl').value.trim(), t = ls.get(CLT);
-  if(!URL_OK(u)){ toast('La dirección debe empezar con https://script.google.com/macros/ y terminar en /exec'); return; }
-  if(!t){ toast('Primero pulsa «Preparar el script de Google»'); return; }
-  const c = {u, t, rev:0, pending:false};
+  const t = $('clToken').value.trim();
+  if(t.length < 20){ toast('Pega el token completo que te dio GitHub'); return; }
+  const c = {g:'', t, rev:0, pending:false};
+  const done = () => { $('clToken').value = ''; renderCloud(); setBadge('ok','Nube ✓ '+hora()); toast('Nube conectada'); };
   try{
-    const r = await cloudCall(c, {op:'get'});
-    if(!r.ok){ toast(r.error === 'token' ? 'La clave del script no coincide. Vuelve a copiar el código completo.' : 'La nube respondió con un error'); return; }
-    const done = () => { ls.del(CLT); $('clUrl').value = ''; renderCloud(); toast('Nube conectada'); };
-    if(r.data){
-      ask('Esa nube ya tiene datos guardados. ¿Cuáles quieres usar?',
-        async () => { CLOUD = c; if(await adoptCloud(r.data, '')) done(); else { CLOUD = null; renderCloud(); } },
-        async () => { CLOUD = c; CLOUD.rev = r.data.rev; CLOUD.pending = true; await persistNow(); done(); syncPush(); },
-        'Usar los de la nube', 'Reemplazar con los de este dispositivo');
-    } else {
-      CLOUD = c; CLOUD.pending = true; await persistNow(); done(); syncPush();
+    const u = await gh(c, '/user');
+    if(u.status === 401){ toast('El token no es válido o ya venció'); return; }
+    if(!u.ok) throw new Error('http ' + u.status);
+    const scopes = u.headers.get('x-oauth-scopes');
+    if(scopes !== null && !/\bgist\b/.test(scopes)){ toast('Al token le falta el permiso «gist». Créalo con el botón «Crear token en GitHub».'); return; }
+    let ex = null;
+    for(let pg = 1; pg <= 3 && !ex; pg++){
+      const l = await gh(c, '/gists?per_page=100&page=' + pg); if(!l.ok) throw new Error('http ' + l.status);
+      const list = await l.json(); if(!list.length) break;
+      ex = list.find(x => x.description === GDESC && x.files && x.files[GFILE]) || null;
     }
-  }catch(e){ toast('No se pudo conectar. Revisa la dirección y que el acceso sea «Cualquier persona».'); }
+    if(ex){
+      c.g = ex.id; const data = await gistRead(c);
+      if(data){
+        ask('Ya hay datos guardados en tu GitHub. ¿Cuáles quieres usar?',
+          async () => { CLOUD = c; if(await adoptCloud(data, '')) done(); else { CLOUD = null; renderCloud(); } },
+          async () => { CLOUD = c; CLOUD.rev = data.rev; CLOUD.pending = true; await persistNow(); done(); syncPush(); },
+          'Usar los de la nube', 'Reemplazar con los de este dispositivo');
+      } else { CLOUD = c; CLOUD.pending = true; await persistNow(); done(); syncPush(); }
+    } else {
+      const blob = await sealCloud(1, KEY, S);
+      const r = await gh(c, '/gists', {method:'POST', body:{description:GDESC, public:false, files:{[GFILE]:{content:JSON.stringify(blob)}}}});
+      if(!r.ok) throw new Error('http ' + r.status);
+      c.g = (await r.json()).id; c.rev = 1; CLOUD = c; await persistNow(); done();
+    }
+  }catch(e){ CLOUD = null; toast('No se pudo conectar con GitHub. Revisa tu conexión y el token.'); }
 };
 $('clSync').onclick = () => syncPull(true);
 $('clCode').onclick = async () => { const box = $('clCodeBox'); if(box.classList.contains('hidden')){ $('clCodeTxt').value = await makeLinkCode(); } box.classList.toggle('hidden'); };

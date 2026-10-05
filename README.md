@@ -16,14 +16,13 @@ La primera vez te pide crear una **clave de 6 dígitos**. Los datos se cifran co
 
 ## Nube: mismos datos en todos tus dispositivos
 
-Los datos se guardan cifrados en un archivo de tu propio Google Drive, a través de un Google Apps Script que solo tú creas. Google solo ve texto cifrado.
+Los datos se guardan cifrados en un **gist secreto de tu GitHub**. GitHub solo ve texto cifrado.
 
-1. En Configuración, «Nube», pulsa **Preparar el script de Google**. Te da el código con tu clave secreta ya puesta.
-2. En script.google.com crea un proyecto, pega el código y pulsa Implementar, Nueva implementación, Aplicación web (Ejecutar como: Yo, Acceso: Cualquier persona).
-3. Pega la dirección que termina en `/exec` y pulsa **Conectar**.
-4. Para otro dispositivo: en el primero pulsa **Código de vinculación**, cópialo, y en el nuevo elige «Ya uso FINANZ en otro dispositivo», pega el código y crea la clave de ese equipo.
+1. En Configuración, «Nube», pulsa **Crear token en GitHub**. Se abre una página con el permiso `gist` ya marcado. Pulsa «Generate token» y copia el token (empieza con `ghp_`). Ese token solo da acceso a tus gists, no a tus repositorios.
+2. Pégalo en la app y pulsa **Conectar**.
+3. Para otro dispositivo: en el primero pulsa **Código de vinculación**, cópialo, y en el nuevo elige «Ya uso FINANZ en otro dispositivo», pega el código y crea la clave de ese equipo.
 
-Los cambios se suben solos y se bajan al abrir la app. Si dos dispositivos editan sin verse, la app te pregunta qué datos conservar. El código de vinculación es como una contraseña: no lo compartas y guárdalo en un lugar privado, porque sin él (y sin ningún dispositivo vinculado) los datos de la nube no se pueden recuperar.
+Los cambios se suben solos y se bajan al abrir la app. Si dos dispositivos editan sin verse, la app te pregunta qué datos conservar. Si el token vence, desconecta y vuelve a conectar con uno nuevo: la app encuentra tu gist y retoma los datos. El código de vinculación es como una contraseña: no lo compartas y guárdalo en un lugar privado, porque sin él (y sin ningún dispositivo vinculado) los datos de la nube no se pueden recuperar.
 
 ## Seguridad
 
@@ -31,5 +30,5 @@ Los cambios se suben solos y se bajan al abrir la app. Si dos dispositivos edita
 - Tras 5 claves incorrectas hay una espera que va aumentando.
 - Huella o rostro (opcional) funciona solo cuando la página se abre desde una dirección **https** (por ejemplo GitHub Pages) y el dispositivo lo permite.
 - Los respaldos (.json y .csv) salen sin cifrar: guárdalos en un lugar privado.
-- Los datos nunca se envían a GitHub. Con la nube conectada solo viajan cifrados a tu Google Drive.
+- Los datos nunca se envían a GitHub. Con la nube conectada solo viajan cifrados a un gist secreto de tu cuenta.
 - Aun así, conviene que el repositorio sea **privado**.

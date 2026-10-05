@@ -9,7 +9,7 @@ Abre `index.html` en un navegador (o publícalo con GitHub Pages para usarlo des
 La primera vez te pide crear una **clave de 6 dígitos**. Con esa clave los datos se cifran (AES-256 con PBKDF2) y se guardan solo en el navegador del dispositivo. Sin la clave no se pueden leer. Si la olvidas, la única salida es borrar los datos y empezar de nuevo, así que descarga respaldos.
 
 - **Resumen:** ingresos, gastos, saldo, cobro de inscripciones y presupuesto previsto frente al real.
-- **Caja:** cierre diario con tickets (del número, al número, devueltos), efectivo, transferencias, pago a 2 cobradores, transferencia a árbitros y gastos de caja. Calcula si el día cuadra y lleva el efectivo y el banco acumulados.
+- **Caja:** cierre diario con tickets (del número, al número, devueltos), efectivo, transferencias, pago a 2 cobradores, transferencia a árbitros y gastos de caja. Calcula si el día cuadra y lleva el efectivo y el banco acumulados. Incluye un conteo de billetes y monedas (arqueo) que se compara con el efectivo esperado: fondo inicial + efectivo recibido − cobradores y gastos.
 - **Equipos:** pagos de inscripción y garantía por equipo.
 - **Movimientos:** ingresos y gastos manuales.
 - **Configuración:** valores del torneo, cambio de clave, huella o rostro y respaldos.

@@ -119,6 +119,11 @@
   .dl .sep{grid-column:1/-1;border-top:1px solid var(--line);margin:4px 0}
   .big{font:700 22px var(--display)}
 
+  .den{display:grid;grid-template-columns:1fr 92px 92px;gap:6px 10px;align-items:center}
+  .den .h{grid-column:1/-1;font:700 12px var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+  .den label{margin:0;color:var(--ink);font-size:14px}
+  .den .sub{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+  .den input{padding:7px 8px;text-align:right}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:200}
   .modal .card{max-width:380px;width:100%}
   .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:14px;z-index:300;max-width:90vw;text-align:center}
@@ -219,6 +224,13 @@
             <div id="cGList"></div>
             <div class="two" style="margin-top:8px"><input id="cGDet" placeholder="Detalle (agua, bolsas, taxi…)" aria-label="Detalle del gasto"><input type="number" inputmode="decimal" min="0" step="0.01" id="cGMon" placeholder="USD" aria-label="Monto del gasto"></div>
             <button class="act ghost" id="cGAdd">Agregar gasto</button>
+          </div>
+          <div class="card">
+            <h3>Conteo de efectivo</h3>
+            <div style="max-width:230px;margin-bottom:4px"><label for="cFondo">Fondo inicial en caja (USD)</label><input type="number" inputmode="decimal" min="0" step="0.01" id="cFondo"></div>
+            <div class="den" id="cDen"></div>
+            <dl class="dl" style="margin-top:12px" id="cDenTot"></dl>
+            <div class="row"><button class="act ghost" id="cDenClr">Limpiar conteo</button></div>
           </div>
           <div class="card">
             <label for="cNota">Notas del día</label>
@@ -354,6 +366,8 @@ const DEFAULT = () => ({
         ticketPrecio:1, premioOro:[700,350,200], premioPlata:[150,100,50], metaEquipos:32 },
   equipos: EQUIPOS.map((n,i) => ({id:'t'+(i+1), nombre:n, tipo:'regular', pagos:[]})), movs:[], caja:[]
 });
+const DEN = [['b100','Billete de $100',100],['b50','Billete de $50',50],['b20','Billete de $20',20],['b10','Billete de $10',10],['b5','Billete de $5',5],['b1','Billete de $1',1],
+  ['m100','Moneda de $1',1],['m50','Moneda de 50¢',0.5],['m25','Moneda de 25¢',0.25],['m10','Moneda de 10¢',0.1],['m5','Moneda de 5¢',0.05],['m1','Moneda de 1¢',0.01]];
 const LOGO = `<svg viewBox="0 0 48 48" width="100%" height="100%" role="img" aria-label="FINANZ">
   <rect width="48" height="48" rx="12" fill="#0c1a2b"/>
   <rect x="0.5" y="0.5" width="47" height="47" rx="11.5" fill="none" stroke="#4cc2e0" stroke-opacity=".35"/>
@@ -544,8 +558,14 @@ function calcDia(d){
   const arb = num(d.arb);
   const gastosT = r2((d.gastos||[]).reduce((a,g)=>a+num(g.m),0));
   const egresos = r2(cobT + arb + gastosT);
+  const cn = d.conteo || {}; let billetes = 0, monedas = 0, hayConteo = false;
+  DEN.forEach(([k,,v]) => { const n = Math.max(0, Math.floor(num(cn[k]))); if(n) hayConteo = true; if(k[0]==='b') billetes += n*v; else monedas += n*v; });
+  billetes = r2(billetes); monedas = r2(monedas);
+  const contado = r2(billetes + monedas), fondo = num(d.fondo);
+  const esperadoEfe = r2(fondo + efectivo - cobT - gastosT);
   return { emitidos, dev, vendidos, esperado, efectivo, transf, ingresos, dif:r2(ingresos-esperado), cobT, arb, gastosT, egresos,
-           efectivoNeto:r2(efectivo-cobT-gastosT), bancoNeto:r2(transf-arb), neto:r2(ingresos-egresos), invalido: dev > emitidos };
+           efectivoNeto:r2(efectivo-cobT-gastosT), bancoNeto:r2(transf-arb), neto:r2(ingresos-egresos), invalido: dev > emitidos,
+           billetes, monedas, contado, fondo, esperadoEfe, difEfe:r2(contado-esperadoEfe), hayConteo };
 }
 function movsAll(){
   const r = S.movs.slice();
@@ -565,6 +585,17 @@ function totales(){
   return {ing, gas, saldo:r2(ing-gas)};
 }
 function porCat(){ const r = {}; movsAll().forEach(m => { const k = m.tipo+'|'+m.cat; r[k] = (r[k]||0) + m.monto; }); return r; }
+function arqueoPill(c){
+  if(!c.hayConteo) return '<span class="muted">—</span>';
+  if(Math.abs(c.difEfe) < 0.005) return '<span class="pill ok">Cuadra</span>';
+  return c.difEfe > 0 ? `<span class="pill warn">Sobra ${money(c.difEfe)}</span>` : `<span class="pill bad">Falta ${money(-c.difEfe)}</span>`;
+}
+function cleanConteo(cn){ const o = {}; DEN.forEach(([k]) => { const n = Math.max(0, Math.floor(num((cn||{})[k]))); if(n) o[k] = n; }); return o; }
+function buildDen(){
+  const fila = ([k,n]) => `<label for="d-${k}">${n}</label><input type="number" inputmode="numeric" min="0" step="1" id="d-${k}" aria-label="Cantidad: ${n}"><span class="sub" id="s-${k}">$0,00</span>`;
+  $('cDen').innerHTML = '<div class="h">Billetes</div>' + DEN.filter(x=>x[0][0]==='b').map(fila).join('')
+                      + '<div class="h">Monedas</div>' + DEN.filter(x=>x[0][0]==='m').map(fila).join('');
+}
 function cuadrePill(c){
   if(!c.emitidos) return '<span class="pill warn">Sin tickets</span>';
   if(Math.abs(c.dif) < 0.005) return '<span class="pill ok">Cuadra</span>';
@@ -617,12 +648,13 @@ function nuevoDia(f){
   const prev = S.caja.filter(d => d.fecha < f).sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
   const n1 = prev && prev.cob && prev.cob[0] ? prev.cob[0].n : '', n2 = prev && prev.cob && prev.cob[1] ? prev.cob[1].n : '';
   return { fecha:f, desde: prev && prev.hasta ? num(prev.hasta)+1 : '', hasta:'', devueltos:'', efectivo:'', transf:'',
-           cob:[{n:n1||'', m:''},{n:n2||'', m:''}], arb:'', gastos:[], nota:'' };
+           cob:[{n:n1||'', m:''},{n:n2||'', m:''}], arb:'', gastos:[], nota:'', fondo:'', conteo:{} };
 }
 function loadDay(f){
   const ex = S.caja.find(d => d.fecha === f);
   draft = ex ? JSON.parse(JSON.stringify(ex)) : nuevoDia(f);
   while(draft.cob.length < 2) draft.cob.push({n:'', m:''});
+  draft.conteo = draft.conteo || {}; if(draft.fondo == null) draft.fondo = '';
   dirty = false; fillForm();
 }
 const nz = v => (v === 0 || v === '' || v == null) ? '' : v;
@@ -635,6 +667,7 @@ function fillForm(){
   $('cCob1n').value = d.cob[0].n; $('cCob1m').value = nz(d.cob[0].m);
   $('cCob2n').value = d.cob[1].n; $('cCob2m').value = nz(d.cob[1].m);
   $('cArb').value = nz(d.arb); $('cNota').value = d.nota || '';
+  $('cFondo').value = nz(d.fondo); DEN.forEach(([k]) => { $('d-'+k).value = nz(d.conteo[k]); });
   $('cGDet').value = ''; $('cGMon').value = '';
   renderGastos(); calcPreview();
 }
@@ -643,6 +676,7 @@ function readDraft(){
   d.desde = $('cDesde').value; d.hasta = $('cHasta').value; d.devueltos = $('cDev').value;
   d.efectivo = $('cEfe').value; d.transf = $('cTra').value; d.arb = $('cArb').value; d.nota = $('cNota').value;
   d.cob[0] = {n:$('cCob1n').value, m:$('cCob1m').value}; d.cob[1] = {n:$('cCob2n').value, m:$('cCob2m').value};
+  d.fondo = $('cFondo').value; d.conteo = d.conteo || {}; DEN.forEach(([k]) => { d.conteo[k] = $('d-'+k).value; });
 }
 function renderGastos(){
   $('cGList').innerHTML = draft.gastos.map((g,i) =>
@@ -660,6 +694,8 @@ function calcPreview(){
   $('cEstado').className = 'pill ' + (dirty ? 'warn' : existe ? 'ok' : 'warn');
   $('cEstado').textContent = dirty ? 'Cambios sin guardar' : existe ? 'Cierre guardado' : 'Sin registrar';
   $('cDel').hidden = !existe;
+  DEN.forEach(([k,,v]) => { $('s-'+k).textContent = money(r2(Math.max(0, Math.floor(num($('d-'+k).value))) * v)); });
+  $('cDenTot').innerHTML = `<dt>Billetes</dt><dd>${money(c.billetes)}</dd><dt>Monedas</dt><dd>${money(c.monedas)}</dd><dt><b>Total contado</b></dt><dd><b>${money(c.contado)}</b></dd>`;
   $('cTickTxt').innerHTML = c.invalido ? '<span class="neg">Los devueltos superan los tickets emitidos. Revisa los números.</span>'
     : (num(draft.hasta) && num(draft.hasta) < num(draft.desde) ? '<span class="neg">El número final es menor al inicial.</span>'
     : c.emitidos ? `${c.emitidos} emitidos − ${c.dev} devueltos = <b>${c.vendidos} vendidos</b>` : 'Escribe el rango de tickets del día.');
@@ -681,15 +717,23 @@ function calcPreview(){
       ${dd('Efectivo en mano', money(c.efectivoNeto), c.efectivoNeto<0?'neg':'')}
       ${dd('Banco', money(c.bancoNeto), c.bancoNeto<0?'neg':'')}
     </dl>
+    <h3 style="margin-top:16px">Arqueo de efectivo</h3>
+    ${(c.hayConteo || c.fondo) ? `<div style="margin-bottom:8px">${arqueoPill(c)}</div><dl class="dl">
+      ${dd('Fondo inicial', money(c.fondo))}
+      ${dd('+ Efectivo recibido', money(c.efectivo))}
+      ${dd('− Cobradores y gastos', money(r2(c.cobT + c.gastosT)))}
+      ${dd('<b>Esperado en caja</b>', '<b>'+money(c.esperadoEfe)+'</b>')}
+      ${dd('<b>Contado</b>', '<b>'+money(c.contado)+'</b>')}
+    </dl>` : '<p class="muted" style="margin:0">Cuenta billetes y monedas en «Conteo de efectivo» para compararlo con el efectivo esperado.</p>'}
     <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:baseline"><span class="muted">Resultado del día</span><span class="big ${c.neto>=0?'pos':'neg'}">${money(c.neto)}</span></div>`;
 }
 function saveDay(){
   addGasto(); readDraft();
   const d = draft, c = calcDia(d);
   if(c.invalido){ toast('Los devueltos superan los tickets emitidos'); return; }
-  if(!c.emitidos && !c.ingresos && !c.egresos){ toast('Escribe al menos tickets, ingresos o salidas'); return; }
+  if(!c.emitidos && !c.ingresos && !c.egresos && !c.hayConteo){ toast('Escribe al menos tickets, ingresos o salidas'); return; }
   const out = { fecha:d.fecha, desde:num(d.desde), hasta:num(d.hasta), devueltos:num(d.devueltos), efectivo:num(d.efectivo), transf:num(d.transf),
-    cob:d.cob.map(x=>({n:x.n.trim(), m:num(x.m)})), arb:num(d.arb), gastos:d.gastos.map(g=>({d:g.d, m:num(g.m)})), nota:(d.nota||'').trim() };
+    cob:d.cob.map(x=>({n:x.n.trim(), m:num(x.m)})), arb:num(d.arb), gastos:d.gastos.map(g=>({d:g.d, m:num(g.m)})), nota:(d.nota||'').trim(), fondo:num(d.fondo), conteo:cleanConteo(d.conteo) };
   S.caja = S.caja.filter(x => x.fecha !== out.fecha).concat(out).sort((a,b)=>a.fecha.localeCompare(b.fecha));
   dirty = false; save(); loadDay(out.fecha); toast('Cierre guardado');
 }
@@ -705,11 +749,11 @@ function renderCajaHist(){
   const rows = dias.map(d => {
     const c = calcDia(d); ae = r2(ae + c.efectivoNeto); ab = r2(ab + c.bancoNeto);
     T.ven += c.vendidos; T.esp += c.esperado; T.rec += c.ingresos; T.egr += c.egresos;
-    return `<tr><td>${esc(dayShort(d.fecha))}</td><td class="num">${c.vendidos}</td><td class="num">${money(c.esperado)}</td><td class="num">${money(c.ingresos)}</td><td>${cuadrePill(c)}</td><td class="num">${money(c.egresos)}</td><td class="num">${money(ae)}</td><td class="num">${money(ab)}</td><td><button class="act ghost" style="padding:4px 10px" onclick="abrirDia('${d.fecha}')">Abrir</button></td></tr>`;
+    return `<tr><td>${esc(dayShort(d.fecha))}</td><td class="num">${c.vendidos}</td><td class="num">${money(c.esperado)}</td><td class="num">${money(c.ingresos)}</td><td>${cuadrePill(c)}</td><td>${arqueoPill(c)}</td><td class="num">${money(c.egresos)}</td><td class="num">${money(ae)}</td><td class="num">${money(ab)}</td><td><button class="act ghost" style="padding:4px 10px" onclick="abrirDia('${d.fecha}')">Abrir</button></td></tr>`;
   }).reverse();
-  $('tCaja').innerHTML = '<tr><th>Día</th><th class="num">Vendidos</th><th class="num">Esperado</th><th class="num">Recibido</th><th>Cuadre</th><th class="num">Salidas</th><th class="num">Efectivo acum.</th><th class="num">Banco acum.</th><th></th></tr>'
-    + (rows.length ? rows.join('') + `<tr><td><b>Total</b></td><td class="num"><b>${T.ven}</b></td><td class="num"><b>${money(r2(T.esp))}</b></td><td class="num"><b>${money(r2(T.rec))}</b></td><td></td><td class="num"><b>${money(r2(T.egr))}</b></td><td class="num"><b>${money(ae)}</b></td><td class="num"><b>${money(ab)}</b></td><td></td></tr>`
-      : '<tr><td colspan="9" class="muted">Todavía no hay cierres. Registra el primero arriba.</td></tr>');
+  $('tCaja').innerHTML = '<tr><th>Día</th><th class="num">Vendidos</th><th class="num">Esperado</th><th class="num">Recibido</th><th>Cuadre</th><th>Arqueo</th><th class="num">Salidas</th><th class="num">Efectivo acum.</th><th class="num">Banco acum.</th><th></th></tr>'
+    + (rows.length ? rows.join('') + `<tr><td><b>Total</b></td><td class="num"><b>${T.ven}</b></td><td class="num"><b>${money(r2(T.esp))}</b></td><td class="num"><b>${money(r2(T.rec))}</b></td><td></td><td></td><td class="num"><b>${money(r2(T.egr))}</b></td><td class="num"><b>${money(ae)}</b></td><td class="num"><b>${money(ab)}</b></td><td></td></tr>`
+      : '<tr><td colspan="10" class="muted">Todavía no hay cierres. Registra el primero arriba.</td></tr>');
 }
 
 /* ============ Equipos ============ */
@@ -807,8 +851,8 @@ function demoData(){
   d.movs.push({id:'demo-m6',fecha:'2026-09-20',tipo:'ingreso',cat:'Premios o sorteos',detalle:'Venta de rifas (ejemplo)',monto:60});
   const cob = (a,b) => [{n:'Marco',m:a},{n:'Luis',m:b}];
   d.caja = [
-    {fecha:'2026-09-18', desde:1001, hasta:1400, devueltos:112, efectivo:241, transf:47, cob:cob(15,15), arb:82, gastos:[{d:'Agua y hielo',m:6}], nota:'Primera fecha'},
-    {fecha:'2026-09-19', desde:1401, hasta:2100, devueltos:190, efectivo:452, transf:53, cob:cob(15,15), arb:123, gastos:[{d:'Bolsas y cinta',m:4.5},{d:'Movilización',m:8}], nota:'Faltan $5, revisar talonario'},
+    {fecha:'2026-09-18', desde:1001, hasta:1400, devueltos:112, efectivo:241, transf:47, cob:cob(15,15), arb:82, gastos:[{d:'Agua y hielo',m:6}], nota:'Primera fecha', fondo:50, conteo:{b20:8,b10:6,b5:4,b1:10,m100:3,m50:4}},
+    {fecha:'2026-09-19', desde:1401, hasta:2100, devueltos:190, efectivo:452, transf:53, cob:cob(15,15), arb:123, gastos:[{d:'Bolsas y cinta',m:4.5},{d:'Movilización',m:8}], nota:'Faltan $5, revisar talonario', fondo:50, conteo:{b20:15,b10:10,b5:10,b1:3,m100:1,m50:1}},
     {fecha:'2026-09-20', desde:2101, hasta:3000, devueltos:231, efectivo:598, transf:71, cob:cob(15,15), arb:143.5, gastos:[{d:'Agua y hielo',m:5}], nota:''}
   ];
   return d;
@@ -823,7 +867,9 @@ $('lockNow').onclick = lockApp;
 $('modalNo').onclick = () => { $('modal').hidden = true; onYes = null; };
 $('modalYes').onclick = () => { $('modal').hidden = true; const f = onYes; onYes = null; if(f) f(); };
 
-['cDesde','cHasta','cDev','cEfe','cTra','cCob1n','cCob1m','cCob2n','cCob2m','cArb','cNota'].forEach(id => $(id).addEventListener('input', () => { dirty = true; calcPreview(); }));
+buildDen();
+$('cDenClr').onclick = () => { DEN.forEach(([k]) => { $('d-'+k).value = ''; }); dirty = true; calcPreview(); };
+['cDesde','cHasta','cDev','cEfe','cTra','cCob1n','cCob1m','cCob2n','cCob2m','cArb','cNota','cFondo',...DEN.map(x=>'d-'+x[0])].forEach(id => $(id).addEventListener('input', () => { dirty = true; calcPreview(); }));
 $('cFecha').onchange = () => goDay($('cFecha').value);
 $('dPrev').onclick = () => goDay(shiftDate(draft.fecha, -1));
 $('dNext').onclick = () => goDay(shiftDate(draft.fecha, 1));
@@ -868,8 +914,8 @@ const q = v => `"${String(v).replace(/"/g,'""')}"`;
 $('bkExp').onclick = () => descargar(`finanz-respaldo-${today()}.json`, JSON.stringify(S,null,2), 'application/json');
 $('bkCsv').onclick = () => descargar(`finanz-movimientos-${today()}.csv`, '﻿'+'Fecha,Tipo,Categoría,Detalle,Monto\n'
   + movsAll().map(m => [m.fecha,m.tipo,q(m.cat),q(m.detalle||''),m.monto].join(',')).join('\n'), 'text/csv');
-$('bkCaja').onclick = () => descargar(`finanz-caja-${today()}.csv`, '﻿'+'Fecha,Desde,Hasta,Emitidos,Devueltos,Vendidos,Esperado,Efectivo,Transferencias,Cobradores,Arbitros,Gastos de caja,Diferencia,Notas\n'
-  + S.caja.map(d => { const c = calcDia(d); return [d.fecha,d.desde,d.hasta,c.emitidos,c.dev,c.vendidos,c.esperado,c.efectivo,c.transf,c.cobT,c.arb,c.gastosT,c.dif,q(d.nota||'')].join(','); }).join('\n'), 'text/csv');
+$('bkCaja').onclick = () => descargar(`finanz-caja-${today()}.csv`, '﻿'+'Fecha,Desde,Hasta,Emitidos,Devueltos,Vendidos,Esperado,Efectivo,Transferencias,Cobradores,Arbitros,Gastos de caja,Diferencia,Fondo inicial,Contado,Diferencia arqueo,Notas\n'
+  + S.caja.map(d => { const c = calcDia(d); return [d.fecha,d.desde,d.hasta,c.emitidos,c.dev,c.vendidos,c.esperado,c.efectivo,c.transf,c.cobT,c.arb,c.gastosT,c.dif,c.fondo,c.hayConteo?c.contado:'',c.hayConteo?c.difEfe:'',q(d.nota||'')].join(','); }).join('\n'), 'text/csv');
 function cargarRespaldo(texto){
   let d; try{ d = JSON.parse(texto); if(!d.cfg || !d.movs || !d.equipos) throw 0; }catch(_){ toast('Respaldo no válido'); return; }
   ask('Esto reemplaza los datos actuales. ¿Continuar?', () => { S = normalize(d); $('cfgForm').dataset.ok=''; save(); loadDay(today()); toast('Respaldo cargado'); });

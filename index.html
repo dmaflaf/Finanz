@@ -183,6 +183,10 @@
       </div>
       <h2>Ingresos y gastos por categoría</h2>
       <div class="wrap"><table id="tCat"></table></div>
+      <button class="act ghost" id="gdBtn" aria-expanded="false" style="margin:10px 0">Ver detalle de gastos</button>
+      <div id="gdBox" hidden>
+        <div class="wrap"><table id="tGd"></table></div>
+      </div>
       <h2>Presupuesto previsto vs. real</h2>
       <div class="wrap"><table id="tPres"></table></div>
     </section>
@@ -405,8 +409,8 @@ const DEFAULT = () => ({
         ticketPrecio:1, premioOro:[700,350,200], premioPlata:[150,100,50], metaEquipos:32 },
   equipos: EQUIPOS.map((n,i) => ({id:'t'+(i+1), nombre:n, tipo:'regular', pagos:[]})), movs:[], caja:[]
 });
-const DEN = [['b100','Billete de $100',100],['b50','Billete de $50',50],['b20','Billete de $20',20],['b10','Billete de $10',10],['b5','Billete de $5',5],['b1','Billete de $1',1],
-  ['m100','Moneda de $1',1],['m50','Moneda de 50¢',0.5],['m25','Moneda de 25¢',0.25],['m10','Moneda de 10¢',0.1],['m5','Moneda de 5¢',0.05],['m1','Moneda de 1¢',0.01]];
+const DEN = [['b50','Billete de $50',50],['b20','Billete de $20',20],['b10','Billete de $10',10],['b5','Billete de $5',5],['b1','Billete de $1',1],
+  ['m100','Moneda de $1',1],['m50','Moneda de 50¢',0.5],['m25','Moneda de 25¢',0.25],['m10','Moneda de 10¢',0.1],['m5','Moneda de 5¢',0.05]];
 const LOGO = `<svg viewBox="0 0 48 48" width="100%" height="100%" role="img" aria-label="FINANZ">
   <rect width="48" height="48" rx="12" fill="#0c1a2b"/>
   <rect x="0.5" y="0.5" width="47" height="47" rx="11.5" fill="none" stroke="#4cc2e0" stroke-opacity=".35"/>
@@ -772,6 +776,24 @@ function totales(){
   const gas = r2(m.filter(x=>x.tipo==='gasto').reduce((a,x)=>a+x.monto,0));
   return {ing, gas, saldo:r2(ing-gas)};
 }
+function gastosDetalle(){
+  const r = S.movs.filter(m=>m.tipo==='gasto').map(m=>({fecha:m.fecha, cat:m.cat, det:m.detalle||'', monto:m.monto}));
+  S.caja.forEach(d => {
+    (d.cob||[]).forEach((c,i) => { if(num(c.m)>0) r.push({fecha:d.fecha, cat:'Cobradores de entrada', det:(c.n||'Cobrador '+(i+1)), monto:num(c.m)}); });
+    if(num(d.arb)>0) r.push({fecha:d.fecha, cat:'Arbitraje', det:'Transferencia a árbitros', monto:num(d.arb)});
+    (d.gastos||[]).forEach(g => { if(num(g.m)>0) r.push({fecha:d.fecha, cat:'Gastos de caja', det:g.d||'Sin detalle', monto:num(g.m)}); });
+  });
+  return r.sort((a,b)=> a.cat===b.cat ? (a.fecha<b.fecha?-1:a.fecha>b.fecha?1:0) : (a.cat<b.cat?-1:1));
+}
+function renderGastosDet(){
+  const r = gastosDetalle(); let h = '<tr><th>Fecha</th><th>Detalle</th><th class="num">Monto</th></tr>', cat = null, sub = 0, tot = 0;
+  const cierra = () => { if(cat!==null) h += `<tr><td colspan="2"><b>Subtotal ${esc(cat)}</b></td><td class="num neg"><b>${money(r2(sub))}</b></td></tr>`; };
+  r.forEach(x => { if(x.cat!==cat){ cierra(); cat = x.cat; sub = 0; h += `<tr><td colspan="3"><b>${esc(cat)}</b></td></tr>`; }
+    sub += x.monto; tot += x.monto; h += `<tr><td>${esc(x.fecha||'')}</td><td>${esc(x.det)}</td><td class="num neg">${money(r2(x.monto))}</td></tr>`; });
+  cierra();
+  h += r.length ? `<tr><td colspan="2"><b>Total gastos</b></td><td class="num neg"><b>${money(r2(tot))}</b></td></tr>` : '<tr><td colspan="3" class="muted">Aún no hay gastos.</td></tr>';
+  $('tGd').innerHTML = h;
+}
 function porCat(){ const r = {}; movsAll().forEach(m => { const k = m.tipo+'|'+m.cat; r[k] = (r[k]||0) + m.monto; }); return r; }
 function arqueoPill(c){
   if(!c.hayConteo) return '<span class="muted">—</span>';
@@ -812,6 +834,7 @@ function renderKpis(){
   });
   if(!Object.keys(c).length) h += '<tr><td colspan="3" class="muted">Aún no hay movimientos.</td></tr>';
   $('tCat').innerHTML = h;
+  renderGastosDet();
 
   const cfg = S.cfg, premios = [...cfg.premioOro, ...cfg.premioPlata].reduce((a,b)=>a+b,0);
   const filas = [
@@ -1145,6 +1168,7 @@ $('clOff').onclick = () => ask('Este dispositivo dejará de sincronizar. Los dat
 function descargar(nombre, texto, tipo){ const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([texto],{type:tipo})); a.download = nombre; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 const q = v => `"${String(v).replace(/"/g,'""')}"`;
+$('gdBtn').onclick = () => { const b = $('gdBox'); b.hidden = !b.hidden; $('gdBtn').textContent = b.hidden ? 'Ver detalle de gastos' : 'Ocultar detalle de gastos'; $('gdBtn').setAttribute('aria-expanded', String(!b.hidden)); };
 $('bkExp').onclick = () => descargar(`finanz-respaldo-${today()}.json`, JSON.stringify(S,null,2), 'application/json');
 $('bkCsv').onclick = () => descargar(`finanz-movimientos-${today()}.csv`, '﻿'+'Fecha,Tipo,Categoría,Detalle,Monto\n'
   + movsAll().map(m => [m.fecha,m.tipo,q(m.cat),q(m.detalle||''),m.monto].join(',')).join('\n'), 'text/csv');
